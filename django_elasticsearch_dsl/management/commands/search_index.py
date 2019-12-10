@@ -1,5 +1,6 @@
 from __future__ import unicode_literals, absolute_import
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import translation
 from django.utils.six.moves import input
 from ...registries import registry
 
@@ -80,8 +81,10 @@ class Command(BaseCommand):
 
     def _create(self, models, options):
         for index in registry.get_indices(models):
+            language = index._name.rsplit('-', 1)[1]
             self.stdout.write("Creating index '{}'".format(index))
-            index.create()
+            with translation.override(language):
+                index.create()
 
     def _populate(self, models, options):
         for doc in registry.get_documents(models):
@@ -89,7 +92,7 @@ class Command(BaseCommand):
             self.stdout.write("Indexing {} '{}' objects".format(
                 qs.count(), doc.django.model.__name__)
             )
-            doc().update(qs)
+            doc().update(qs, fail_silently=self.fail_silently)
 
     def _delete(self, models, options):
         index_names = [str(index) for index in registry.get_indices(models)]
@@ -123,6 +126,8 @@ class Command(BaseCommand):
 
         action = options['action']
         models = self._get_models(options['models'])
+
+        self.fail_silently = options.get('fail_silently', False)
 
         if action == 'create':
             self._create(models, options)

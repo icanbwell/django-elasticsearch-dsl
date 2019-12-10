@@ -2,9 +2,12 @@ import collections
 from types import MethodType
 import warnings
 
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 from django.db.models.fields.files import FieldFile
+from django.template.loader import render_to_string
+from django.utils import translation
 from django.utils.encoding import force_text
 from django.utils.functional import Promise
 
@@ -268,3 +271,27 @@ except ImportError:
             'Elasticsearch 6.',
             DeprecationWarning
         )
+
+
+class TranslateTextField(TextField):
+    def __init__(self, *args, **kwargs):
+        if 'analyzer' not in kwargs:
+            self._set_language_analyser = True
+        super(TranslateTextField, self).__init__(*args, **kwargs)
+
+    def to_dict(self):
+        mapping = super(TranslateTextField, self).to_dict()
+        if self._set_language_analyser:
+            mapping['analyzer'] = settings.LANGUAGE_ANALYSERS[translation.get_language() or settings.LANGUAGE_ENGLISH]
+        return mapping
+
+
+class TemplateField(TextField):
+    def __init__(self, template, *args, **kwargs):
+        self._template = template
+        super(TemplateField, self).__init__(*args, **kwargs)
+
+    def get_value_from_instance(self, instance, field_value_to_ignore=None):
+        if not instance:
+            return None
+        return render_to_string(self._template, {'object': instance})

@@ -3,10 +3,12 @@ from copy import deepcopy
 
 from itertools import chain
 
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ImproperlyConfigured
+from django.utils import translation
 from django.utils.six import itervalues, iterkeys, iteritems
-from elasticsearch_dsl import Field, AttrDict
+from elasticsearch_dsl import Field, AttrDict, document as dsl_document
 
 from django_elasticsearch_dsl.exceptions import RedeclaredFieldError
 from .apps import DEDConfig
@@ -83,7 +85,24 @@ class DocumentRegistry(object):
         document._index.settings(**default_index_settings)
 
         # Register the document and index class to our registry
-        self.register(index=document._index, doc_class=document)
+        if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False):
+            for language in settings.LANGUAGE_ANALYSERS:
+                with translation.override(language):
+                    # Update settings of the document index
+                    opts = document.Index
+                    i = dsl_document.Index(
+                        '{}-{}'.format(document.Index.name, language),
+                        using=getattr(opts, 'using', 'default')
+                    )
+                    i.settings(**getattr(opts, 'settings', {}))
+                    i.aliases(**getattr(opts, 'aliases', {}))
+                    for a in getattr(opts, 'analyzers', ()):
+                        i.analyzer(a)
+                    i.settings(**default_index_settings)
+                    i.document(document)
+                    self.register(index=i, doc_class=document)
+        else:
+            self.register(index=document._index, doc_class=document)
 
         return document
 
