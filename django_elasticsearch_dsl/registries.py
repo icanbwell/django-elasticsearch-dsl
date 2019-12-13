@@ -91,7 +91,7 @@ class DocumentRegistry(object):
                     # Update settings of the document index
                     opts = document.Index
                     i = dsl_document.Index(
-                        '{}-{}'.format(document.Index.name, language),
+                        document._format_index_language(document.Index.name, language),
                         using=getattr(opts, 'using', 'default')
                     )
                     i.settings(**getattr(opts, 'settings', {}))

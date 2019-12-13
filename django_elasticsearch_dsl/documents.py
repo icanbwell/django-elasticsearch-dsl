@@ -59,18 +59,22 @@ class DocType(DSLDocument):
         return id(self)
 
     @classmethod
+    def _format_index_language(cls, index, language):
+        return '{0}-{1}'.format(index, language)
+
+    @classmethod
     def get_index_name_for_language(cls, index, language):
         if isinstance(index, (list, tuple)):
             translation_indexes = []
             for i in index:
                 if not language:
                     language = settings.LANGUAGE_ENGLISH
-                translation_indexes.append('{0}-{1}'.format(i, language))
+                translation_indexes.append(cls._format_index_language(i, language))
             return translation_indexes
         else:
             if not language:
                 language = settings.LANGUAGE_ENGLISH
-            return u'{0}-{1}'.format(index, language)
+            return cls._format_index_language(index, language)
 
     @classmethod
     def search(cls, using=None, index=None):
