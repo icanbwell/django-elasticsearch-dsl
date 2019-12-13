@@ -178,7 +178,7 @@ class DocType(DSLDocument):
         with translation.override(language):
             return {
                 '_op_type': action,
-                '_index': self._index._name,
+                '_index': self.get_index_name_for_language(self._index._name, language),
                 '_type': self._doc_type.name,
                 '_id': object_instance.pk,
                 '_source': (
@@ -194,10 +194,16 @@ class DocType(DSLDocument):
                 )
                 for page in paginator.page_range:
                     for object_instance in paginator.page(page).object_list:
-                        yield self._prepare_action(object_instance, action, fail_silently=fail_silently)
+                        for language in settings.LANGUAGE_ANALYSERS:
+                            yield self._prepare_action(
+                                object_instance, action, language=language, fail_silently=fail_silently
+                            )
             else:
                 for object_instance in object_list:
-                    yield self._prepare_action(object_instance, action, fail_silently=fail_silently)
+                    for language in settings.LANGUAGE_ANALYSERS:
+                        yield self._prepare_action(
+                            object_instance, action, language=language, fail_silently=fail_silently
+                        )
         else:
             if self.django.queryset_pagination is not None:
                 paginator = Paginator(
