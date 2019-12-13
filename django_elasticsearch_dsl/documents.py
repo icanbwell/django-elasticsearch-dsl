@@ -1,7 +1,9 @@
 from __future__ import unicode_literals
 
+from django.conf import settings
 from django.core.paginator import Paginator
 from django.db import models
+from django.utils import translation
 from django.utils.six import iteritems
 from elasticsearch.helpers import bulk
 from elasticsearch_dsl import Document as DSLDocument
@@ -19,7 +21,7 @@ from .fields import (
     ShortField,
     TextField,
 )
-from .search import Search
+from .search import Search, SearchNone
 
 model_field_class_to_field_class = {
     models.AutoField: IntegerField,
@@ -57,13 +59,60 @@ class DocType(DSLDocument):
         return id(self)
 
     @classmethod
+    def _format_index_language(cls, index, language):
+        return '{0}-{1}'.format(index, language)
+
+    @classmethod
+    def get_index_name_for_language(cls, index, language):
+        if isinstance(index, (list, tuple)):
+            translation_indexes = []
+            for i in index:
+                if not language:
+                    language = settings.LANGUAGE_ENGLISH
+                translation_indexes.append(cls._format_index_language(i, language))
+            return translation_indexes
+        else:
+            if not language:
+                language = settings.LANGUAGE_ENGLISH
+            return cls._format_index_language(index, language)
+
+    @classmethod
     def search(cls, using=None, index=None):
         return Search(
             using=cls._get_using(using),
-            index=cls._default_index(index),
+            index=(
+                cls.get_index_name_for_language(
+                    index or cls.Index.name, translation.get_language()
+                ) if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
+                else cls._default_index(index)
+            ),
             doc_type=[cls],
             model=cls.django.model
         )
+
+    @classmethod
+    def none(cls, using=None, index=None):
+        return SearchNone(
+            using=cls._get_using(using),
+            index=(
+                cls.get_index_name_for_language(
+                    index or cls.Index.name, translation.get_language()
+                ) if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
+                else cls._default_index(index)
+            ),
+            doc_type=[cls],
+            model=cls.django.model
+        )
+
+    def translate_field(self, field_name, value, fail_silently=True):
+        """
+        Method to translate value of a field based on language
+        :param field_name: Name of the field to be translated
+        :param value: Value to be translated
+        :param fail_silently: Whether to raise error when encountered
+        :return: Translated value
+        """
+        return value
 
     def get_queryset(self):
         """
@@ -71,7 +120,7 @@ class DocType(DSLDocument):
         """
         return self.django.model._default_manager.all()
 
-    def prepare(self, instance):
+    def prepare(self, instance, fail_silently=True):
         """
         Take a model instance, and turn it into a dict that can be serialized
         based on the fields defined on this DocType subclass
@@ -99,6 +148,9 @@ class DocType(DSLDocument):
                         instance, self._related_instance_to_ignore
                     )
 
+            if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False):
+                field_value = self.translate_field(name, field_value, fail_silently=fail_silently)
+
             data[name] = field_value
 
         return data
@@ -122,33 +174,53 @@ class DocType(DSLDocument):
     def bulk(self, actions, **kwargs):
         return bulk(client=self._get_connection(), actions=actions, **kwargs)
 
-    def _prepare_action(self, object_instance, action):
-        return {
-            '_op_type': action,
-            '_index': self._index._name,
-            '_type': self._doc_type.name,
-            '_id': object_instance.pk,
-            '_source': (
-                self.prepare(object_instance) if action != 'delete' else None
-            ),
-        }
+    def _prepare_action(self, object_instance, action, language=None, fail_silently=True):
+        with translation.override(language):
+            return {
+                '_op_type': action,
+                '_index': self.get_index_name_for_language(self._index._name, language),
+                '_type': self._doc_type.name,
+                '_id': object_instance.pk,
+                '_source': (
+                    self.prepare(object_instance, fail_silently) if action != 'delete' else None
+                ),
+            }
 
-    def _get_actions(self, object_list, action):
-        if self.django.queryset_pagination is not None:
-            paginator = Paginator(
-                object_list, self.django.queryset_pagination
-            )
-            for page in paginator.page_range:
-                for object_instance in paginator.page(page).object_list:
-                    yield self._prepare_action(object_instance, action)
+    def _get_actions(self, object_list, action, fail_silently=True):
+        if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False):
+            if self.django.queryset_pagination is not None:
+                paginator = Paginator(
+                    object_list, self.django.queryset_pagination
+                )
+                for page in paginator.page_range:
+                    for object_instance in paginator.page(page).object_list:
+                        for language in settings.LANGUAGE_ANALYSERS:
+                            yield self._prepare_action(
+                                object_instance, action, language=language, fail_silently=fail_silently
+                            )
+            else:
+                for object_instance in object_list:
+                    for language in settings.LANGUAGE_ANALYSERS:
+                        yield self._prepare_action(
+                            object_instance, action, language=language, fail_silently=fail_silently
+                        )
         else:
-            for object_instance in object_list:
-                yield self._prepare_action(object_instance, action)
+            if self.django.queryset_pagination is not None:
+                paginator = Paginator(
+                    object_list, self.django.queryset_pagination
+                )
+                for page in paginator.page_range:
+                    for object_instance in paginator.page(page).object_list:
+                        yield self._prepare_action(object_instance, action)
+            else:
+                for object_instance in object_list:
+                    yield self._prepare_action(object_instance, action)
 
     def update(self, thing, refresh=None, action='index', **kwargs):
         """
         Update each document in ES for a model, iterable of models or queryset
         """
+        fail_silently = kwargs.pop('fail_silently', True)
         if refresh is True or (
             refresh is None and self.django.auto_refresh
         ):
@@ -160,7 +232,10 @@ class DocType(DSLDocument):
             object_list = thing
 
         return self.bulk(
-            self._get_actions(object_list, action), **kwargs
+            self._get_actions(object_list, action, fail_silently),
+            chunk_size=getattr(settings, 'ELASTICSEARCH_DSL_CHUNK_SIZE', 500),
+            max_chunk_bytes=getattr(settings, 'ELASTICSEARCH_DSL_CHUNK_BYTES', 100 * 1024 * 1024),
+            **kwargs
         )
 
 
