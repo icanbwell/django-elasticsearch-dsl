@@ -4,9 +4,9 @@ from django.conf import settings
 from django.core.paginator import Paginator
 from django.db import models
 from django.utils import translation
-from django.utils.six import iteritems
 from elasticsearch.helpers import bulk
 from elasticsearch_dsl import Document as DSLDocument
+from six import iteritems
 
 from .exceptions import ModelFieldNotMappedError
 from .fields import (
