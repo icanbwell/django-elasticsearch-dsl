@@ -7,8 +7,8 @@ from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import translation
-from django.utils.six import itervalues, iterkeys, iteritems
 from elasticsearch_dsl import Field, AttrDict, document as dsl_document
+from six import itervalues, iterkeys, iteritems
 
 from django_elasticsearch_dsl.exceptions import RedeclaredFieldError
 from .apps import DEDConfig
