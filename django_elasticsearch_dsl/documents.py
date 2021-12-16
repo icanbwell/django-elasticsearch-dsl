@@ -63,25 +63,29 @@ class DocType(DSLDocument):
         return '{0}-{1}'.format(index, language)
 
     @classmethod
-    def get_index_name_for_language(cls, index, language):
+    def _format_index_name(cls, index, language):
+        return '{0}-{1}'.format(settings.DEPLOYMENT_ENVIRONMENT, cls._format_index_language(index, language))
+
+    @classmethod
+    def get_custom_index_name(cls, index, language):
         if isinstance(index, (list, tuple)):
-            translation_indexes = []
+            custom_indexes = []
             for i in index:
                 if not language:
                     language = settings.LANGUAGE_ENGLISH
-                translation_indexes.append(cls._format_index_language(i, language))
+                custom_indexes.append(cls._format_index_name(i, language))
             return translation_indexes
         else:
             if not language:
                 language = settings.LANGUAGE_ENGLISH
-            return cls._format_index_language(index, language)
+            return cls._format_index_name(index, language)
 
     @classmethod
     def search(cls, using=None, index=None):
         return Search(
             using=cls._get_using(using),
             index=(
-                cls.get_index_name_for_language(
+                cls.get_custom_index_name(
                     index or cls.Index.name, translation.get_language()
                 ) if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
                 else cls._default_index(index)
@@ -95,7 +99,7 @@ class DocType(DSLDocument):
         return SearchNone(
             using=cls._get_using(using),
             index=(
-                cls.get_index_name_for_language(
+                cls.get_custom_index_name(
                     index or cls.Index.name, translation.get_language()
                 ) if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
                 else cls._default_index(index)
@@ -178,7 +182,7 @@ class DocType(DSLDocument):
         with translation.override(language):
             return {
                 '_op_type': action,
-                '_index': self.get_index_name_for_language(self._index._name, language),
+                '_index': self.get_custom_index_name(self._index._name, language),
                 '_type': self._doc_type.name,
                 '_id': object_instance.pk,
                 '_source': (
