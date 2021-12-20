@@ -64,7 +64,11 @@ class DocType(DSLDocument):
 
     @classmethod
     def _format_index_name(cls, index, language):
-        return '{0}-{1}'.format(settings.DEPLOYMENT_ENVIRONMENT, cls._format_index_language(index, language))
+        language_formatted_index = cls._format_index_language(index, language)
+        if settings.ELASTICSEARCH_DSL_ENV_PREFIX_ENABLED:
+            return '{0}-{1}'.format(settings.DEPLOYMENT_ENVIRONMENT, language_formatted_index)
+        else:
+            return language_formatted_index
 
     @classmethod
     def get_custom_index_name(cls, index, language):
@@ -74,7 +78,7 @@ class DocType(DSLDocument):
                 if not language:
                     language = settings.LANGUAGE_ENGLISH
                 custom_indexes.append(cls._format_index_name(i, language))
-            return translation_indexes
+            return custom_indexes
         else:
             if not language:
                 language = settings.LANGUAGE_ENGLISH
