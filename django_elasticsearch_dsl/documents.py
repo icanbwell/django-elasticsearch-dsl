@@ -63,37 +63,38 @@ class DocType(DSLDocument):
         return '{0}-{1}'.format(index, language)
 
     @classmethod
-    def _format_index_name(cls, index, language):
-        language_formatted_index = cls._format_index_language(index, language)
-        if settings.ELASTICSEARCH_DSL_ENV_PREFIX_ENABLED:
-            return '{0}-{1}'.format(settings.DEPLOYMENT_ENVIRONMENT, language_formatted_index)
-        else:
-            return language_formatted_index
-
-    @classmethod
-    def get_custom_index_name(cls, index, language):
+    def get_custom_index_name(cls, index, language=None):
+        """
+        Helper function to fetch the index name at this env
+        """
+        language_dsl_enabled = getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
+        language = language if language else settings.LANGUAGE_ENGLISH
+        index_prefix = getattr(settings, 'ES_INDEX_PREFIX', '')
+        index_suffix = getattr(settings, 'ES_INDEX_SUFFIX', '')
+        updated_index_name = None
+        if not language:
+            language = settings.LANGUAGE_ENGLISH
         if isinstance(index, (list, tuple)):
             custom_indexes = []
             for i in index:
-                if not language:
-                    language = settings.LANGUAGE_ENGLISH
-                custom_indexes.append(cls._format_index_name(i, language))
-            return custom_indexes
+                custom_index = '{0}-{1}'.format(index_prefix, i) if index_prefix else i
+                custom_index = '{0}-{1}'.format(custom_index, language) if language_dsl_enabled else custom_index
+                custom_index = '{0}-{1}'.format(custom_index, index_suffix) if index_suffix else custom_index
+                custom_indexes.append(custom_index)
+            updated_index_name = custom_index
         else:
-            if not language:
-                language = settings.LANGUAGE_ENGLISH
-            return cls._format_index_name(index, language)
+            index = '{0}-{1}'.format(index_prefix, index) if index_prefix else index
+            index = '{0}-{1}'.format(index, language) if language_dsl_enabled else index
+            updated_index_name = '{0}-{1}'.format(index, index_suffix) if index_suffix else index
+        if not (language_dsl_enabled and index_prefix and index_suffix):
+            return cls._default_index(index)
+        return index
 
     @classmethod
     def search(cls, using=None, index=None):
         return Search(
             using=cls._get_using(using),
-            index=(
-                cls.get_custom_index_name(
-                    index or cls.Index.name, translation.get_language()
-                ) if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
-                else cls._default_index(index)
-            ),
+            index=cls.get_custom_index_name(index or cls.Index.name, language=translation.get_language()),
             doc_type=[cls],
             model=cls.django.model
         )
@@ -102,12 +103,7 @@ class DocType(DSLDocument):
     def none(cls, using=None, index=None):
         return SearchNone(
             using=cls._get_using(using),
-            index=(
-                cls.get_custom_index_name(
-                    index or cls.Index.name, translation.get_language()
-                ) if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
-                else cls._default_index(index)
-            ),
+            index=cls.get_custom_index_name(index or cls.Index.name, language=translation.get_language()),
             doc_type=[cls],
             model=cls.django.model
         )
@@ -186,7 +182,7 @@ class DocType(DSLDocument):
         with translation.override(language):
             return {
                 '_op_type': action,
-                '_index': self.get_custom_index_name(self._index._name, language),
+                '_index': cls.get_custom_index_name(self._index._name, language),
                 '_type': self._doc_type.name,
                 '_id': object_instance.pk,
                 '_source': (
