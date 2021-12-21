@@ -71,7 +71,6 @@ class DocType(DSLDocument):
         language = language if language else settings.LANGUAGE_ENGLISH
         index_prefix = getattr(settings, 'ES_INDEX_PREFIX', '')
         index_suffix = getattr(settings, 'ES_INDEX_SUFFIX', '')
-        updated_index_name = None
         if not language:
             language = settings.LANGUAGE_ENGLISH
         if isinstance(index, (list, tuple)):
@@ -81,11 +80,11 @@ class DocType(DSLDocument):
                 custom_index = '{0}-{1}'.format(custom_index, language) if language_dsl_enabled else custom_index
                 custom_index = '{0}-{1}'.format(custom_index, index_suffix) if index_suffix else custom_index
                 custom_indexes.append(custom_index)
-            updated_index_name = custom_index
+            index = custom_index
         else:
             index = '{0}-{1}'.format(index_prefix, index) if index_prefix else index
             index = '{0}-{1}'.format(index, language) if language_dsl_enabled else index
-            updated_index_name = '{0}-{1}'.format(index, index_suffix) if index_suffix else index
+            index = '{0}-{1}'.format(index, index_suffix) if index_suffix else index
         if not (language_dsl_enabled and index_prefix and index_suffix):
             return cls._default_index(index)
         return index
@@ -182,7 +181,7 @@ class DocType(DSLDocument):
         with translation.override(language):
             return {
                 '_op_type': action,
-                '_index': cls.get_custom_index_name(self._index._name, language),
+                '_index': self.get_custom_index_name(self._index._name, language),
                 '_type': self._doc_type.name,
                 '_id': object_instance.pk,
                 '_source': (
