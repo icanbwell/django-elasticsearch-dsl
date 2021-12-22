@@ -113,7 +113,8 @@ class DocumentRegistry(object):
                     i = _set_custom_index_attributes(i)
                     self.register(index=i, doc_class=document)
         elif index_prefix or index_suffix:
-            i = document.Index(
+            opts = document.Index
+            i = dsl_document.Index(
                 document.get_custom_index_name(document.Index.name),
                 using=getattr(opts, 'using', 'default')
             )

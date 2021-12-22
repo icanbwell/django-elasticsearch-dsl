@@ -82,15 +82,11 @@ class Command(BaseCommand):
 
     def _create(self, models, options):
         suffix_enabled = getattr(settings, 'ES_INDEX_SUFFIX', '')
-        language_dsl_enabled = getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
         for index in registry.get_indices(models):
+            # Fetch language from index
+            language = index._name.rsplit('-', 2)[1] if suffix_enabled else index._name.rsplit('-', 1)[1]
             self.stdout.write("Creating index '{}'".format(index))
-            if language_dsl_enabled:
-                # Fetch language from index
-                language = index._name.rsplit('-', 2)[1] if suffix_enabled else index._name.rsplit('-', 1)[1]
-                with translation.override(language):
-                    index.create()
-            else:
+            with translation.override(language):
                 index.create()
 
     def _populate(self, models, options):
