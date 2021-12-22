@@ -84,8 +84,24 @@ class DocumentRegistry(object):
         default_index_settings = deepcopy(DEDConfig.default_index_settings())
         document._index.settings(**default_index_settings)
 
+        def _set_custom_index_attributes(index):
+            """
+            Helper method to set attributes to the custom index
+            """
+            index.settings(**getattr(opts, 'settings', {}))
+            index.aliases(**getattr(opts, 'aliases', {}))
+            for a in getattr(opts, 'analyzers', ()):
+                index.analyzer(a)
+            index.settings(**default_index_settings)
+            index.document(document)
+            return index
+
         # Register the document and index class to our registry
-        if getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False):
+        language_dsl_enabled = getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
+        index_prefix = getattr(settings, 'ES_INDEX_PREFIX', '')
+        index_suffix = getattr(settings, 'ES_INDEX_SUFFIX', '')
+        # Check for any custom updates to the index name if required
+        if language_dsl_enabled:
             for language in settings.LANGUAGE_ANALYSERS:
                 with translation.override(language):
                     # Update settings of the document index
@@ -94,13 +110,15 @@ class DocumentRegistry(object):
                         document.get_custom_index_name(document.Index.name, language),
                         using=getattr(opts, 'using', 'default')
                     )
-                    i.settings(**getattr(opts, 'settings', {}))
-                    i.aliases(**getattr(opts, 'aliases', {}))
-                    for a in getattr(opts, 'analyzers', ()):
-                        i.analyzer(a)
-                    i.settings(**default_index_settings)
-                    i.document(document)
+                    i = _set_custom_index_attributes(i)
                     self.register(index=i, doc_class=document)
+        elif index_prefix or index_suffix:
+            i = document.Index(
+                document.get_custom_index_name(document.Index.name),
+                using=getattr(opts, 'using', 'default')
+            )
+            i = _set_custom_index_attributes(i)
+            self.register(index=i, doc_class=document)
         else:
             self.register(index=document._index, doc_class=document)
 

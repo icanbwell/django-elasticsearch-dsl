@@ -68,23 +68,27 @@ class DocType(DSLDocument):
         Helper function to fetch the index name at this env
         """
         language_dsl_enabled = getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
-        language = language if language else settings.LANGUAGE_ENGLISH
+        language = language or settings.LANGUAGE_ENGLISH
         index_prefix = getattr(settings, 'ES_INDEX_PREFIX', '')
         index_suffix = getattr(settings, 'ES_INDEX_SUFFIX', '')
-        if not language:
-            language = settings.LANGUAGE_ENGLISH
         if isinstance(index, (list, tuple)):
             custom_indexes = []
             for i in index:
-                custom_index = '{0}-{1}'.format(index_prefix, i) if index_prefix else i
-                custom_index = '{0}-{1}'.format(custom_index, language) if language_dsl_enabled else custom_index
-                custom_index = '{0}-{1}'.format(custom_index, index_suffix) if index_suffix else custom_index
+                custom_index = '{prefix}{index}{language}{suffix}'.format(
+                    prefix=f'{index_prefix}-' if index_prefix else '',
+                    index=i,
+                    language=f'-{language}' if language_dsl_enabled else '',
+                    suffix=f'-{index_suffix}' if index_suffix else ''
+                )
                 custom_indexes.append(custom_index)
-            index = custom_index
+            index = custom_indexes
         else:
-            index = '{0}-{1}'.format(index_prefix, index) if index_prefix else index
-            index = '{0}-{1}'.format(index, language) if language_dsl_enabled else index
-            index = '{0}-{1}'.format(index, index_suffix) if index_suffix else index
+            index = '{prefix}{index}{language}{suffix}'.format(
+                prefix=f'{index_prefix}-' if index_prefix else '',
+                index=i,
+                language=f'-{language}' if language_dsl_enabled else '',
+                suffix=f'-{index_suffix}' if index_suffix else ''
+            )
         if not (language_dsl_enabled and index_prefix and index_suffix):
             return cls._default_index(index)
         return index

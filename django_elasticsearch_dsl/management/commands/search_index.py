@@ -1,4 +1,5 @@
 from __future__ import unicode_literals, absolute_import
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import translation
 from six.moves import input
@@ -80,10 +81,16 @@ class Command(BaseCommand):
         return set(models)
 
     def _create(self, models, options):
+        suffix_enabled = getattr(settings, 'ES_INDEX_SUFFIX', '')
+        language_dsl_enabled = getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
         for index in registry.get_indices(models):
-            language = index._name.rsplit('-', 1)[1]
             self.stdout.write("Creating index '{}'".format(index))
-            with translation.override(language):
+            if language_dsl_enabled:
+                # Fetch language from index
+                language = index._name.rsplit('-', 2)[1] if suffix_enabled else index._name.rsplit('-', 1)[1]
+                with translation.override(language):
+                    index.create()
+            else:
                 index.create()
 
     def _populate(self, models, options):
