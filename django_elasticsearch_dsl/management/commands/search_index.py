@@ -87,7 +87,7 @@ class Command(BaseCommand):
             self.stdout.write("Creating index '{}'".format(index))
             if language_dsl_enabled:
                 # Fetch language from index
-                language = index._name.rsplit('-', 2)[1] if suffix_enabled else index._name.rsplit('-', 1)[1]
+                language = index._name.rsplit('-', max_split)[1]
                 with translation.override(language):
                     index.create()
             else:
