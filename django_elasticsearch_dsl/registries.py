@@ -111,14 +111,14 @@ class DocumentRegistry(object):
             for language in settings.LANGUAGE_ANALYSERS:
                 with translation.override(language):
                     for connection_alias in settings.ELASTICSEARCH_DSL.keys():
-                        self.create_index(document, connection_alias, opts, default_index_settings, language)
+                        self.create_and_register_index(document, connection_alias, opts, default_index_settings, language)
         elif index_prefix or index_suffix:
             for connection_alias in settings.ELASTICSEARCH_DSL.keys():
-                self.create_index(document, connection_alias, opts, default_index_settings)
+                self.create_and_register_index(document, connection_alias, opts, default_index_settings)
         else:
             for connection_alias in settings.ELASTICSEARCH_DSL.keys():
                 (
-                    self.create_index(document, connection_alias, opts, default_index_settings)
+                    self.create_and_register_index(document, connection_alias, opts, default_index_settings)
                     if connection_alias != 'default' else None
                 )
             # Case of 'default' handled separately as its index is already created in document.
