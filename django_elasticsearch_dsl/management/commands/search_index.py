@@ -89,12 +89,19 @@ class Command(BaseCommand):
                 # Fetch language from index
                 language = index._name.rsplit('-', max_split)[1]
                 with translation.override(language):
+                    # Here creating index in the cluster on running this management command in the cluster
+                    # where it was registered initially.
                     index.create()
             else:
                 index.create()
 
     def _populate(self, models, options):
-        for doc in registry.get_documents(models):
+        # Here considering unique docs from indices only, as
+        # 1) A single doc can be present in multiple indices (as we are handling case of multiple
+        #    clusters while registering)
+        # 2) update() function of doc adds the data in all clusters
+        unique_docs = { doc for doc in registry.get_documents(models) }
+        for doc in unique_docs:
             qs = doc().get_queryset()
             self.stdout.write("Indexing {} '{}' objects".format(
                 qs.count(), doc.django.model.__name__)
@@ -102,12 +109,10 @@ class Command(BaseCommand):
             doc().update(qs, fail_silently=self.fail_silently)
 
     def _delete(self, models, options):
-        index_names = [str(index) for index in registry.get_indices(models)]
-
         if not options['force']:
             response = input(
-                "Are you sure you want to delete "
-                "the '{}' indexes? [n/Y]: ".format(", ".join(index_names)))
+                "Are you sure you want to delete the '{}' indexes? "
+                "[n/Y]: ".format(", ".join([str(index) for index in registry.get_indices(models)])))
             if response.lower() != 'y':
                 self.stdout.write('Aborted')
                 return False

@@ -179,7 +179,28 @@ class DocType(DSLDocument):
             )
 
     def bulk(self, actions, **kwargs):
+        # Executing bulk operation on all other clusters except default.
+        # Here in action along with type of action, index name & it's id is provided.
+        # We are explicitly updating this index of specified id for all clusters/clients
+        for connection_alias in settings.ELASTICSEARCH_DSL.keys():
+            (
+                bulk(client=self._get_connection(using=connection_alias), actions=actions, **kwargs)
+                if connection_alias != 'default' else None
+            )
+        # Handled default case separately to return output in case of default
         return bulk(client=self._get_connection(), actions=actions, **kwargs)
+
+    def delete(self, **kwargs):
+        # Executing delete operation on all available clusters
+        for connection_alias in settings.ELASTICSEARCH_DSL.keys():
+            super().delete(using=connection_alias, **kwargs)
+
+    def save(self, **kwargs):
+        # Executing save operation on all other clusters except default
+        for connection_alias in settings.ELASTICSEARCH_DSL.keys():
+            super().save(using=connection_alias, **kwargs) if connection_alias != 'default' else None
+
+        return super().save(**kwargs)
 
     def _prepare_action(self, object_instance, action, language=None, fail_silently=True):
         with translation.override(language):

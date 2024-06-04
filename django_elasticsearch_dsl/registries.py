@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import translation
-from elasticsearch_dsl import Field, AttrDict, document as dsl_document
+from elasticsearch_dsl import AttrDict, document as dsl_document
 from six import itervalues, iterkeys, iteritems
 
 from django_elasticsearch_dsl.exceptions import RedeclaredFieldError
@@ -25,6 +25,8 @@ class DocumentRegistry(object):
 
     def register(self, index, doc_class):
         """Register the model with the registry"""
+        # Since we are using set here, so case of multiple cluster in which same doc_class is provided multiple times
+        # for a django model is handled.
         self._models[doc_class.django.model].add(doc_class)
 
         for related in doc_class.django.related_models:
@@ -36,6 +38,20 @@ class DocumentRegistry(object):
                 return
 
         self._indices[index].add(doc_class)
+
+    def create_and_register_index(self, document, connection_alias, opts, default_index_settings, language=None):
+        """Creates new index and calls register method"""
+        i = dsl_document.Index(
+            document.get_custom_index_name(opts.name, language),
+            using=connection_alias
+        )
+        i.settings(**getattr(opts, 'settings', {}))
+        i.aliases(**getattr(opts, 'aliases', {}))
+        for a in getattr(opts, 'analyzers', ()):
+            i.analyzer(a)
+        i.settings(**default_index_settings)
+        i.document(document)
+        self.register(index=i, doc_class=document)
 
     def register_document(self, document):
         django_meta = getattr(document, 'Django')
@@ -88,37 +104,26 @@ class DocumentRegistry(object):
         language_dsl_enabled = getattr(settings, 'ELASTICSEARCH_DSL_TRANSLATION_ENABLED', False)
         index_prefix = getattr(settings, 'ES_INDEX_PREFIX', '')
         index_suffix = getattr(settings, 'ES_INDEX_SUFFIX', '')
+
+        opts = document.Index
         # Check for any custom updates to the index name if required
         if language_dsl_enabled:
             for language in settings.LANGUAGE_ANALYSERS:
                 with translation.override(language):
-                    # Update settings of the document index
-                    opts = document.Index
-                    i = dsl_document.Index(
-                        document.get_custom_index_name(document.Index.name, language),
-                        using=getattr(opts, 'using', 'default')
-                    )
-                    i.settings(**getattr(opts, 'settings', {}))
-                    i.aliases(**getattr(opts, 'aliases', {}))
-                    for a in getattr(opts, 'analyzers', ()):
-                        i.analyzer(a)
-                    i.settings(**default_index_settings)
-                    i.document(document)
-                    self.register(index=i, doc_class=document)
+                    for connection_alias in settings.ELASTICSEARCH_DSL.keys():
+                        self.create_index(document, connection_alias, opts, default_index_settings, language)
         elif index_prefix or index_suffix:
-            opts = document.Index
-            i = dsl_document.Index(
-                document.get_custom_index_name(document.Index.name),
-                using=getattr(opts, 'using', 'default')
-            )
-            i.settings(**getattr(opts, 'settings', {}))
-            i.aliases(**getattr(opts, 'aliases', {}))
-            for a in getattr(opts, 'analyzers', ()):
-                i.analyzer(a)
-            i.settings(**default_index_settings)
-            i.document(document)
-            self.register(index=i, doc_class=document)
+            for connection_alias in settings.ELASTICSEARCH_DSL.keys():
+                self.create_index(document, connection_alias, opts, default_index_settings)
         else:
+            for connection_alias in settings.ELASTICSEARCH_DSL.keys():
+                (
+                    self.create_index(document, connection_alias, opts, default_index_settings)
+                    if connection_alias != 'default' else None
+                )
+            # Case of 'default' handled separately as its index is already created in document.
+            # This case is not handled in previous elif statement as one of prefix or suffix exists in index name.
+            # But here only 'default' is required, so new index not created.
             self.register(index=document._index, doc_class=document)
 
         return document
