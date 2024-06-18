@@ -179,6 +179,8 @@ class DocType(DSLDocument):
             )
 
     def bulk(self, actions, **kwargs):
+        if 'client' in kwargs:
+            return bulk(actions=actions, **kwargs)
         return bulk(client=self._get_connection(), actions=actions, **kwargs)
 
     def _prepare_action(self, object_instance, action, language=None, fail_silently=True):
